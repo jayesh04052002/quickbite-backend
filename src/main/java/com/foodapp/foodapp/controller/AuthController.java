@@ -2,6 +2,7 @@ package com.foodapp.foodapp.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import com.foodapp.foodapp.model.User;
@@ -9,17 +10,22 @@ import com.foodapp.foodapp.repository.UserRepository;
 
 @RestController
 @RequestMapping("/auth")
-@CrossOrigin
+@CrossOrigin(origins = "*")  // you can change later to your vercel domain
 public class AuthController {
 
     @Autowired
-    UserRepository repo;
+    private UserRepository repo;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody User user) {
 
-        // optional: check email already exists
-        User existing = repo.findByEmail(user.getEmail());
+        String email = user.getEmail() == null ? null : user.getEmail().trim().toLowerCase();
+        user.setEmail(email);
+
+        User existing = repo.findByEmail(email);
         if (existing != null) {
             return ResponseEntity.badRequest().body("Email already registered");
         }
@@ -28,18 +34,30 @@ public class AuthController {
             user.setRole("USER");
         }
 
+        // ✅ encode before saving
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+
         User saved = repo.save(user);
+        saved.setPassword(null); // optional: don't send password back
         return ResponseEntity.ok(saved);
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody User user) {
-        User u = repo.findByEmail(user.getEmail());
 
-        if (u != null && u.getPassword().equals(user.getPassword())) {
-            return ResponseEntity.ok(u); // ✅ return full user object
+        String email = user.getEmail() == null ? null : user.getEmail().trim().toLowerCase();
+        String rawPassword = user.getPassword() == null ? "" : user.getPassword();
+
+        User u = repo.findByEmail(email);
+
+        // ✅ matches(raw, encoded)
+        if (u != null && passwordEncoder.matches(rawPassword, u.getPassword())) {
+            u.setPassword(null); // optional: don't send password back
+            //return ResponseEntity.ok(u);
+        }else if(u== null){
+        	return ResponseEntity.status(401).body("Invalid Credentials");
         }
 
-        return ResponseEntity.status(401).body("Invalid Credentials");
+        return ResponseEntity.ok(u);
     }
 }
